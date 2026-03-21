@@ -50,7 +50,6 @@ export default function Builder({ id }: BuilderProps) {
   const [previewReady, setPreviewReady] = useState(false);
   const [editedPaths, setEditedPaths] = useState<Set<string>>(new Set());
   const [getDbId, setGetDbId] = useState<string>("")
-  const [_uiPrompts, setUiPrompt] = useState<string>("")
   const [builderpromptValue, setBuilderPromptValue] = useState<string>("");
   const [stackblitzLoading, setStackblitzLoading] = useState(false);
   const { data: session } = useSession();
@@ -65,6 +64,7 @@ export default function Builder({ id }: BuilderProps) {
   const router = useRouter();
 
   const init = async () => {
+    setStackblitzLoading(false)
     setLoading(true);
 
     try {
@@ -98,7 +98,6 @@ export default function Builder({ id }: BuilderProps) {
       const { prompts, uiPrompts, imageUrl } = templateResponse.data;
       const parsedInitialSteps = parseXml(uiPrompts[0]).map((x: Step) => ({ ...x, status: 'pending' as const }));
       setSteps(parsedInitialSteps);
-      setUiPrompt(uiPrompts);
 
       formData.append('prompts', JSON.stringify(prompts));
       formData.append('uiprompt', uiPrompts);
