@@ -7,7 +7,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { basePrompt as nodeBasePrompt } from "../defaults/node";
 import { basePrompt as reactBasePrompt } from "../defaults/react";
 import { basePrompt as angularBasePrompt } from "../defaults/angular";
-import { BASE_PROMPT, BASE_PROMPT_ANGULAR } from "../prompts";
+import { basePrompt as fullstcakBasePrompt } from "../defaults/fullstack";
+import { BASE_PROMPT, BASE_PROMPT_ANGULAR, BASE_PROMPT_FULLSTACK } from "../prompts";
 import cloudinary from "@/lib/cloudinary";
 import streamifier from "streamifier";
 
@@ -67,6 +68,14 @@ export async function POST(request: NextRequest) {
           `Here is an artifact that contains all files of the project visible to you.\nConsider the contents of ALL files in the project.\n\n${angularBasePrompt}\n\nHere is a list of files that exist on the file system but are not being shown to you:\n\n  - .gitignore\n  - package-lock.json\n`,
         ],
         uiPrompts: [angularBasePrompt],
+        imageUrl,
+      })
+    } else if (framework.toLowerCase() === "fullstack") {
+      return NextResponse.json({
+        prompts: [BASE_PROMPT_FULLSTACK,
+          `Here is an artifact that contains all files of the project visible to you.\nConsider the contents of ALL files in the project.\n\n${fullstcakBasePrompt}\n\nHere is a list of files that exist on the file system but are not being shown to you:\n\n  - .gitignore\n  - package-lock.json\n`,
+        ],
+        uiPrompts: [fullstcakBasePrompt],
         imageUrl,
       })
     } else {

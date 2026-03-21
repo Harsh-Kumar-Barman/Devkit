@@ -3,11 +3,13 @@ import { create } from 'zustand';
 interface BuildState {
   prompt: string;
   model: string;
+  framework: 'react' | 'angular' | 'fullstack'; // 👈 added framework
   imageFile: File | null;
   isCooldown: boolean;
   cooldownTime: number;
   setPrompt: (prompt: string) => void;
   setModel: (model: string) => void;
+  setFramework: (framework: 'react' | 'angular' | 'fullstack') => void; // 👈 setter
   setImageFile: (file: File | null) => void;
   startCooldown: (seconds: number) => void;
 }
@@ -15,14 +17,13 @@ interface BuildState {
 let cooldownInterval: NodeJS.Timeout | null = null;
 
 export const useBuildStore = create<BuildState>((set) => {
-   const startCooldown = (seconds: number) => {
+  const startCooldown = (seconds: number) => {
     if (cooldownInterval) {
       clearInterval(cooldownInterval);
       cooldownInterval = null;
     }
 
     const endTime = Date.now() + seconds * 1000;
-    localStorage.setItem("cooldownEndTime", endTime.toString());
 
     set({ isCooldown: true, cooldownTime: seconds });
 
@@ -35,7 +36,7 @@ export const useBuildStore = create<BuildState>((set) => {
           cooldownInterval = null;
         }
         set({ isCooldown: false, cooldownTime: 0 });
-        localStorage.removeItem("cooldownEndTime");
+        // localStorage.removeItem("cooldownEndTime");
       } else {
         set({ cooldownTime: remaining });
       }
@@ -44,13 +45,14 @@ export const useBuildStore = create<BuildState>((set) => {
 
   return {
     prompt: '',
-    // model: 'gemini-2.5-pro',
+    framework: 'react', 
     model: 'gemini-2.5-flash',
     imageFile: null,
     isCooldown: false,
     cooldownTime: 0,
     setPrompt: (prompt) => set({ prompt }),
     setModel: (model) => set({ model }),
+    setFramework: (framework) => set({ framework }),
     setImageFile: (file) => set({ imageFile: file }),
     startCooldown,
   };

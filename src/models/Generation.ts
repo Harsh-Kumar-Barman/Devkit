@@ -52,7 +52,7 @@ const GenerationSchema = new Schema<IGeneration>(
     imageUrl: { type: String, default: null },
     prompt: { type: String, required: true },
     modelName: { type: String, required: true },
-    framework: { type: String, enum: ["react", "angular"], required: true }, // 👈 Added enum
+    framework: { type: String, enum: ["react", "angular", "fullstack"], required: true }, // 👈 Added enum
     output: { type: String, required: true },
     steps: [
       {

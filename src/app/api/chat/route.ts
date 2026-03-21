@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { getSystemPrompt, getSystemPromptAngular } from "../prompts";
+import { getFullStackSystemPrompt, getSystemPrompt, getSystemPromptAngular } from "../prompts";
 
 async function fileToGenerativePart(file: File) {
   const base64EncodedData = Buffer.from(await file.arrayBuffer()).toString("base64");
@@ -22,10 +22,21 @@ export async function POST(request: NextRequest) {
     const prompts = formData.get("prompts") as string | null;
     const uiprompt = formData.get("uiprompt") as string | null;
     const imageFile = formData.get("image") as File | null;
-    const modelName = (formData.get("model") as string) || "gemini-1.5-flash"; 
+    const modelName = (formData.get("model") as string) || "gemini-1.5-flash";
+    console.log(modelName)
     const framework = (formData.get("framework") as string);
-    const systemPrompt =
-      framework?.toLowerCase() === "angular" ? getSystemPromptAngular() : getSystemPrompt();
+    // const systemPrompt =
+    //   framework?.toLowerCase() === "angular" ? getSystemPromptAngular() : getSystemPrompt();
+    let systemPrompt;
+
+    if (framework?.toLowerCase() === "angular") {
+      systemPrompt = getSystemPromptAngular();
+    } else if (framework?.toLowerCase() === "fullstack") {
+      systemPrompt = getFullStackSystemPrompt();
+    } else {
+      systemPrompt = getSystemPrompt();
+    }
+
 
     // Construct the multimodal message parts
     const userPromptParts: any[] = [];
@@ -44,7 +55,7 @@ export async function POST(request: NextRequest) {
       { role: "user", parts: userPromptParts },
       { role: "user", parts: [{ text: systemPrompt }] }
     ];
-
+    console.log(messages)
     const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
     const model = genAI.getGenerativeModel({ model: modelName });
 

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import axios from "axios";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
-import { ArrowRight, FileIcon, Plus } from "lucide-react";
+import { ArrowRight, Plus } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -20,7 +20,6 @@ import Image from 'next/image';
 import * as Accordion from '@radix-ui/react-accordion';
 import { ChevronDown } from 'lucide-react';
 
-// Ensure axios sends cookies with requests
 axios.defaults.withCredentials = true;
 
 export default function Sidebar() {
@@ -33,11 +32,11 @@ export default function Sidebar() {
   const [skip, setSkip] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [framework, setFramework] = useState('react');
   const containerRef = useRef<HTMLDivElement>(null);
   const limit = 10;
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const { framework, setFramework } = useBuildStore();
 
   const {
     prompt,
@@ -53,14 +52,20 @@ export default function Sidebar() {
 
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  const models = [
+    { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash", badge: "Suggested (Fastest)" },
+    { value: "gemini-2.5-flash-preview-05-20", label: "Gemini 2.5 Flash (05-20 Preview)", badge: "Preview" },
+    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", badge: "High Quality" },
+    { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro", badge: "Fallback" },
+    { value: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite", badge: "Lightweight" },
+  ];
 
   const handleLogout = async () => {
+    await fetch("/api/logout", { method: "POST" });
     await signOut({ redirect: false });
-
-    document.cookie = "next-auth.session-token=; Max-Age=0; path=/";
-    document.cookie = "__Secure-next-auth.session-token=; Max-Age=0; path=/";
-
     window.location.replace("/login");
   };
 
@@ -138,25 +143,11 @@ export default function Sidebar() {
     return () => container.removeEventListener("scroll", handleScroll);
   }, [fetchHistory]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null;
-    setImageFile(file);
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setImagePreview(null);
-    }
-  };
-
   const sanitizePromptFramework = (input: string): string => {
     const forbiddenFrameworks = [
       "vue",
       "svelte",
-      "next\\.js", // if you only want React
+      "next\\.js",
       "nuxt",
       "ember",
       "solidjs",
@@ -173,7 +164,7 @@ export default function Sidebar() {
       "php",
       "django",
       "laravel",
-      "node\\.js", // optional
+      "node\\.js",
     ];
 
     const pattern = new RegExp(`\\b(${forbiddenFrameworks.join("|")})\\b`, "gi");
@@ -189,10 +180,10 @@ export default function Sidebar() {
     const cleanedPrompt = sanitizePromptFramework(prompt);
     setPrompt(cleanedPrompt);
 
-    try {
+  try {
       const res = await axios.post("/api/limit");
       const { allowed, remaining, timeLeft } = res.data;
-
+console.log(framework)
       if (!allowed) {
         const hours = Math.floor(timeLeft / (1000 * 60 * 60));
         const minutes = Math.ceil((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
@@ -201,43 +192,61 @@ export default function Sidebar() {
       }
 
       toast.success(`Prompt allowed! You have ${remaining} prompts left today.`);
-      // router.push(`/builder?prompt=${encodeURIComponent(cleanedPrompt)}&model=${model}`);
-      router.push(`/builder?prompt=${encodeURIComponent(cleanedPrompt)}&model=${encodeURIComponent(model)}&framework=${encodeURIComponent(framework)}`);
+         const token =
+        (typeof crypto !== "undefined" && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+            sessionStorage.setItem("ai-prompt-token", token);
+      sessionStorage.setItem("ai-prompt-init", "1");
+      localStorage.setItem("ai-prompt-entered", cleanedPrompt);
+      router.push(`/builder`);
       startCooldown(60); // 60s cooldown
-    } catch (err) {
+      } catch (err) {
       toast.error("Something went wrong. Please try again.");
       console.error(err);
     }
   };
 
-
   useEffect(() => {
-    const last = localStorage.getItem("lastPromptTime");
-    if (last) {
-      const elapsed = Math.floor((Date.now() - Number(last)) / 1000);
-      const remaining = 60 - elapsed;
-      if (remaining > 0) {
-        startCooldown(remaining);
+    const checkCooldown = async () => {
+      try {
+        const res = await fetch("/api/limit");
+        if (!res.ok) return;
+        const data = await res.json();
+        const cooldownRemaining = data?.cooldownRemaining ?? 0;
+        if (cooldownRemaining > 0) startCooldown(cooldownRemaining);
+      } catch (err) {
+        console.error("Failed to fetch cooldown:", err);
       }
-    }
+    };
+    checkCooldown();
   }, [startCooldown]);
 
   const handleDeleteHistory = async (id: string) => {
     try {
+      setDeletingId(id);
+
       const res = await fetch(`/api/generation/${id}`, {
         method: "DELETE",
       });
 
       if (!res.ok) {
-        throw new Error("Failed to delete history");
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "Failed to delete history");
       }
 
-      // Remove deleted item from local state
-      setHistory((prev) => prev?.filter((item) => item._id !== id) ?? []);
+      setHistory((prev) => {
+        if (!prev) return prev;
+        return prev.filter((h) => h._id !== id);
+      });
+
       setOpenMenuId(null);
-    } catch (error) {
-      console.error("❌ Error deleting history:", error);
-      alert("Failed to delete history item.");
+      toast.success("History item deleted");
+    } catch (err) {
+      console.error("❌ Failed to delete history:", err);
+      toast?.error?.((err as Error).message || "Could not delete item");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -245,16 +254,48 @@ export default function Sidebar() {
     setPrompt("");
     setImageFile(null);
 
-    const storedEndTime = localStorage.getItem("cooldownEndTime");
-    if (storedEndTime) {
-      const remaining = Math.max(0, Math.ceil((Number(storedEndTime) - Date.now()) / 1000));
-      if (remaining > 0) {
-        startCooldown(remaining);
-      } else {
-        localStorage.removeItem("cooldownEndTime");
+    const checkCooldown = async () => {
+      try {
+        const res = await fetch("/api/limit");
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const cooldownRemaining = data?.cooldownRemaining ?? 0;
+
+        if (cooldownRemaining > 0) {
+          startCooldown(cooldownRemaining);
+        }
+      } catch (err) {
+        console.error("Failed to fetch cooldown:", err);
       }
-    }
+    };
+
+    checkCooldown();
   }, []);
+
+
+
+  const handleClearHistory = async () => {
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/generation/delete", {
+        method: "DELETE",
+      });
+
+      if (!res.ok) throw new Error("Failed to clear history");
+
+      setHistory([]);
+      setSkip(0);
+      setHasMore(true);
+      fetchHistory();
+      toast.success("All history cleared");
+    } catch (error) {
+      console.error("❌ Error clearing history:", error);
+      alert("Failed to clear history.");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   if (status === "loading")
     return (
@@ -265,7 +306,6 @@ export default function Sidebar() {
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6">
-      {/* Header */}
       <div className="w-full flex fixed top-0 justify-between px-5 pt-2 bg-black items-center z-50">
         <div className="top-4 left-6">
           <Link href={"/"} className="text-white font-bold text-xl">
@@ -323,7 +363,6 @@ export default function Sidebar() {
 
             <textarea
               value={prompt}
-              // onChange={(e) => setPrompt(e.target.value)}
               onChange={(e) => {
                 const input = e.target.value;
                 if (input.length <= 500) {
@@ -333,14 +372,6 @@ export default function Sidebar() {
               placeholder={imageFile ? "Describe the image or add instructions..." : "What do you want to build?"}
               className="w-full bg-transparent outline-none resize-none placeholder-zinc-500 text-md text-white pr-10 scrollbar-hide"
               rows={imagePreview ? 3 : 4}
-            />
-
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              className="hidden"
-              accept="image/png, image/jpeg, image/webp" // Restrict to image files
             />
 
             <Popover>
@@ -358,50 +389,56 @@ export default function Sidebar() {
                 align="start"
                 className="bg-zinc-900 border border-zinc-800 p-3 rounded-xl w-64 space-y-3"
               >
-                <div className="flex gap-3">
-                  <button
-                    title="Upload file"
-                    type="button"
-                    className="p-2 rounded-md bg-zinc-900 hover:bg-zinc-700 text-white transition-colors"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <FileIcon size={18} />
-                  </button>
-                </div>
-
                 <Select value={model} onValueChange={setModel}>
                   <SelectTrigger className="w-full bg-zinc-900 hover:bg-zinc-700 border border-zinc-700 text-white text-sm rounded-md">
                     <SelectValue placeholder="Choose Gemini model" />
                   </SelectTrigger>
                   <SelectContent className="bg-zinc-900 border border-zinc-700 text-white">
-
-                    <SelectItem
-                      value="gemini-2.5-flash"
-                      className="hover:bg-zinc-700 text-white cursor-pointer"
-                    >
-                      Gemini 2.5 Flash
-                    </SelectItem>
-                    <SelectItem
-                      value="gemini-2.5-flash-preview-05-20"
-                      className="hover:bg-zinc-700 text-white cursor-pointer"
-                    >
-                      Gemini 2.5 Flash (05‑20 preview)
-                    </SelectItem>
-                    <SelectItem
-                      value="gemini-2.5-pro"
-                      className="hover:bg-zinc-700 text-white cursor-pointer"
-                    >
-                      Gemini 2.5 pro
-                    </SelectItem>
-                    <SelectItem
-                      value="gemini-2.0-flash-lite"
-                      className="hover:bg-zinc-700 text-white cursor-pointer"
-                    >
-                      Gemini 2.0 Flash Lite
-                    </SelectItem>
+                    {models.map((m) => (
+                      <SelectItem
+                        key={m.value}
+                        value={m.value}
+                        className="hover:bg-zinc-700 text-white cursor-pointer flex justify-between items-center"
+                      >
+                        <span>{m.label}</span>
+                        {m.badge && (
+                          <span
+                            className={`ml-2 text-[10px] px-2 py-0.5 rounded 
+                               ${m.value === "gemini-2.5-flash"
+                                ? "bg-yellow-500/20 text-yellow-400"
+                                : m.value.includes("preview")
+                                  ? "bg-blue-500/20 text-blue-400"
+                                  : m.value.includes("pro")
+                                    ? "bg-purple-500/20 text-purple-400"
+                                    : "bg-zinc-600/30 text-zinc-300"
+                              }`}
+                          >
+                            {m.badge}
+                          </span>
+                        )}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
-                <Select value={framework} onValueChange={setFramework}>
+                <Select
+                  value={framework}
+                  onValueChange={(val) => {
+                    setFramework(val as "react" | "angular" | "fullstack");
+                    if (val === "angular") {
+                      toast(
+                        <div className="text-justify">
+                          Angular projects are not fully optimized for live preview in DevKit, as they
+                          require higher memory and resources. For the best experience, we recommend
+                          opening the project directly in <b>StackBlitz</b>.
+                        </div>,
+                        {
+                          style: { background: "#fde047", color: "#000", cursor: "pointer" },
+                          duration: 6500,
+                        }
+                      );
+                    }
+                  }}
+                >
                   <SelectTrigger className="w-full bg-zinc-900 hover:bg-zinc-700 border border-zinc-700 text-white text-sm rounded-md mt-2">
                     <SelectValue placeholder="Select Framework (React or Angular)" />
                   </SelectTrigger>
@@ -413,6 +450,12 @@ export default function Sidebar() {
                       React
                     </SelectItem>
                     <SelectItem
+                      value="fullstack"
+                      className="hover:bg-zinc-700 text-white cursor-pointer"
+                    >
+                      Full stack
+                    </SelectItem>
+                    <SelectItem
                       value="angular"
                       className="hover:bg-zinc-700 text-white cursor-pointer"
                     >
@@ -420,6 +463,7 @@ export default function Sidebar() {
                     </SelectItem>
                   </SelectContent>
                 </Select>
+
               </PopoverContent>
             </Popover>
 
@@ -479,12 +523,40 @@ export default function Sidebar() {
           </Accordion.Item>
         </Accordion.Root>
 
-      </div>
+        <div className="w-full max-w-3xl mt-2 mx-auto flex items-center justify-center gap-3 text-white">
+          <h2 className="text-lg font-semibold whitespace-nowrap">
+            <a href="https://github.com/RajGuptaVips2025/DevKit"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-500 transition-colors"
+            >Project</a> Contributors:</h2>
+          <div className="flex gap-3">
+            <a
+              href="https://www.linkedin.com/in/raj-gupta-b9b66321a/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-blue-400 hover:text-blue-500 transition-colors"
+            >
+              Raj
+            </a>
+            <a
+              href="https://www.linkedin.com/in/harsh-kumar-barman-461002262/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-blue-400 hover:text-blue-500 transition-colors"
+            >
+              Harsh
+            </a>
+          </div>
+        </div>
+
+      </div >
 
       {/* Sidebar */}
       <div
         className={`fixed top-0 right-0 h-full w-64 bg-zinc-900 text-white p-6 shadow-lg transform transition-transform duration-300 ease-in-out z-50 ${isSidebarOpen ? "translate-x-0" : "translate-x-full"
-          }`}
+          }`
+        }
       >
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-lg font-semibold">Chat History</h2>
@@ -505,16 +577,11 @@ export default function Sidebar() {
                 No history found
               </p>
             ) : (
-              history?.map((item) => (
-                <div key={item._id} className="relative w-full">
+              history?.map((item, index) => (
+                <div key={item._id ?? `history-${index}`} className="relative w-full">
                   <div className="flex items-center justify-between px-1 py-2 hover:bg-gray-800 rounded-md">
                     <button
-                      onClick={() => {
-                        router.push(
-                          `/builder?prompt=${encodeURIComponent(item.prompt)}&model=${encodeURIComponent(item.modelName)}&framework=${encodeURIComponent(item.framework ?? 'react')}&id=${item._id}`
-                        );
-
-                      }}
+                      onClick={() => { router.push(`/builder/${item._id}`); }}
                       className="flex-1 text-left text-sm text-zinc-300 hover:text-white truncate focus:outline-none"
                       title={item.prompt}
                     >
@@ -532,16 +599,20 @@ export default function Sidebar() {
                         ⋮
                       </button>
 
-                      {/* Fix: Use top-full to place dropdown directly below */}
                       {openMenuId === item._id && (
                         <div className="absolute right-0 top-full mt-1 bg-zinc-800 border border-zinc-700 rounded shadow-md text-sm z-50">
                           <div
                             onClick={() => handleDeleteHistory(item._id)}
-                            className="px-4 py-2 text-red-500 hover:bg-zinc-700 cursor-pointer">
-                            Delete
+                            className={`px-4 py-2 ${deletingId === item._id
+                              ? "opacity-50 pointer-events-none"
+                              : "text-red-500 hover:bg-zinc-700 cursor-pointer"
+                              }`}
+                          >
+                            {deletingId === item._id ? "Deleting..." : "Delete"}
                           </div>
                         </div>
                       )}
+
                     </div>
                   </div>
                 </div>
@@ -549,28 +620,24 @@ export default function Sidebar() {
             )}
           </div>
 
-          <button
-            onClick={async () => {
-              try {
-                const res = await fetch("/api/generation/delete", {
-                  method: "DELETE",
-                });
+          {history && history.length > 0 && (
+            <button
+              onClick={handleClearHistory}
+              disabled={deleting}
+              className="mt-4 w-full bg-yellow-600 hover:bg-yellow-700 text-white py-2 rounded text-sm transition"
+            >
+              {deleting ? "Deleting..." : "Clear History"}
+            </button>
+          )}
 
-                if (!res.ok) throw new Error("Failed to clear history");
-
-                setHistory([]);
-                setSkip(0);
-                setHasMore(true);
-                fetchHistory();
-              } catch (error) {
-                console.error("❌ Error clearing history:", error);
-                alert("Failed to clear history.");
-              }
-            }}
-            className="mt-4 w-full bg-yellow-600 hover:bg-yellow-700 text-white py-2 rounded text-sm transition"
-          >
-            Clear History
-          </button>
+          {/* Overlay */}
+          {deleting && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white px-6 py-4 rounded-lg shadow-lg text-lg font-medium">
+                Deleting...
+              </div>
+            </div>
+          )}
 
           <button
             onClick={handleLogout}
@@ -580,6 +647,6 @@ export default function Sidebar() {
           </button>
         </div>
       </div>
-    </div>
+    </div >
   );
 }
