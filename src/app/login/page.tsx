@@ -47,7 +47,7 @@ export default function LoginPage() {
         router.replace("/");
       }
     } catch (error: any) {
-      toast.error("An unexpected error occurred.");
+      toast.error("An unexpected error occurred.",error);
     } finally {
       setLoading(false);
     }
@@ -127,7 +127,7 @@ export default function LoginPage() {
         </button>
 
         <p className="mt-8 text-center text-sm text-zinc-400">
-          Don't have an account?{" "}
+          {"Don't have an account? "}
           <Link href="/register" className="text-purple-400 hover:text-purple-300 font-medium transition-colors">
             Sign up
           </Link>

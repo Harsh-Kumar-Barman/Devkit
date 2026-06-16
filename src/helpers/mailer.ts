@@ -20,7 +20,7 @@ export const sendEmail = async ({ email, emailType, userId }: any) => {
 
     // Since we don't have user's SMTP details, we can use a test account or suggest adding one.
     // For now, setting up with Mailtrap or standard SMTP from env.
-    var transport = nodemailer.createTransport({
+    const transport = nodemailer.createTransport({
       host: process.env.SMTP_HOST || "sandbox.smtp.mailtrap.io",
       port: Number(process.env.SMTP_PORT) || 2525,
       auth: {
