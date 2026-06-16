@@ -4,6 +4,10 @@ export interface IUser extends Document {
   _id: Types.ObjectId;  
   name: string;
   email: string;
+  password?: string;
+  isVerified?: boolean;
+  verifyToken?: string;
+  verifyTokenExpiry?: Date;
   lastPromptTime?: Date;     // for 24-hour daily prompt tracking
   lastCooldownTime?: Date;   // for 60-second cooldown tracking
   dailyPromptCount?: number;
@@ -23,6 +27,15 @@ const userSchema = new Schema<IUser>(
       lowercase: true,
       trim: true,
     },
+    password: {
+      type: String,
+    },
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+    verifyToken: String,
+    verifyTokenExpiry: Date,
     lastPromptTime: {
       type: Date,
       default: null,
